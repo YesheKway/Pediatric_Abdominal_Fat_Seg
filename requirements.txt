@@ -1,0 +1,7 @@
+keras==2.2.4
+scikit-learn
+pydicom
+SimpleITK
+tqdm
+pandas
+openpyxl

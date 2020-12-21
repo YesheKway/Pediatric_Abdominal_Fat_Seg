@@ -1,0 +1,27 @@
+# Training Configuration
+
+#------------------------------- PATHS ------------------------------
+children_data_path: /app/data/children
+infant_data_path: /app/data/infants
+dst: /app/dst # path at which training and evaluation results will be saved to
+#------------------------------- Training Settings ------------------
+model_type: Unet_base
+batch_size: 14
+dropout: 0.0
+loss_function: dice_coef_multilabel  # possible values are 'dice_coef_multilabel', 'tversky_loss' and 'class_weighted_pixelwise_crossentropy' 
+learning_rate: 1e-4
+patience: 4        
+img_dim: [512,512]
+n_input_channels: 3
+n_classes: 4
+n_epochs: 2
+interpolation: bilinear
+shuffle: True 
+batch_normalization: True
+augmentation: False
+biasfield_correction: False
+experimentalrepeat: 2
+split_ratio_train: 70
+#--------------------------------------------------------------------
+verbose_trainig: 1
+verbose_evaluation: 1
