@@ -1,0 +1,23 @@
+# Training Configuration
+#------------------------------- PATHS -------------------------------------------------------------------------
+config_path: /config/singleTraining_config.yaml
+#data_path: //home/kwaygo/Documents/Abdominal_Adipose_Segmentation/test_train_set/
+#dst: /home/kwaygo/Documents/Abdominal_Adipose_Segmentation/test_train_set/tmpdst
+data_path: /app/Data/Combined/ChildrenAndNeonates
+dst: /app/Code/AAT_SEG/dst # path at which training results will be saved to
+#------------------------------- Hyperparameter/Training Settings ----------------------------------------------
+img_dim: [512,512]
+batch_size: 12
+dropout: 0.0
+learning_rate: 1e-4
+patience: 4        
+n_epochs: 200
+shuffle: True
+augmentation: False
+model_type: 'Unet_VGG16'
+interpolation: bilinear
+utilize_pretrained_weights: True
+loss_function: dice_coef_multilabel
+batch_normalization: True
+n_output_channels: 4
+n_input_channels: 1

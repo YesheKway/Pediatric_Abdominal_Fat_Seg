@@ -11,6 +11,13 @@ import numpy as np
 
 class ImageProcessing():
     
+    
+    def normalize_zero_one(self, image):        
+        """
+        normalizes image pixel values to the range from 0 to 1
+        """
+        return (image- np.min(image))/(np.max(image)-np.min(image)) 
+    
     def normalize(self, image):        
          """
          normalizes image pixel values to the range from 0 to 1

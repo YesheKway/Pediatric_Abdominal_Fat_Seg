@@ -6,11 +6,11 @@ Created on Thu May 14 09:12:03 2020
 @author: Yeshe Kway 
 """
 from keras.callbacks import EarlyStopping, ModelCheckpoint
-from keras.optimizers import Adam
-from Utils import DataGenerator_AbdominalFatSeg, sort_dir_aphanumerical
 from Utils import clearSession, init_GPU_Session, dice_coef_multilabel 
 from Utils import tversky_loss, class_weighted_pixelwise_crossentropy
 from Utils import readCSVToList, writeListToCSV, selectTrainValIDs
+from Utils import sort_dir_aphanumerical
+from keras.optimizers import Adam
 from models import Unet_Designer
 from pathlib import Path
 from tqdm import tqdm
@@ -349,8 +349,7 @@ def computeAverageResults(pathToFolder):
 
 
 # def main():
-    
-    k_fold_training()
+    # k_fold_training()
 #     # startMultipleModelEvaluation()
 #     # computeAverageResults('0')
     

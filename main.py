@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 """
 Created on Fri Dec 18 10:22:02 2020
-
 @author: ymk
 """
+
 from training import  k_fold_training
 from evaluation import Evaluater 
 import argparse
