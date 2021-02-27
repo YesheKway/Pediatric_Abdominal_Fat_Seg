@@ -9,9 +9,11 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint
 from Utils import clearSession, init_GPU_Session, dice_coef_multilabel 
 from Utils import tversky_loss, class_weighted_pixelwise_crossentropy
 from Utils import readCSVToList, writeListToCSV, selectTrainValIDs
+from DataGenerators import DataGenerator_AbdominalFatSeg
 from Utils import sort_dir_aphanumerical
 from keras.optimizers import Adam
 from models import Unet_Designer
+from shutil import copyfile
 from pathlib import Path
 from tqdm import tqdm
 import pandas as pd
@@ -94,13 +96,12 @@ def init_DataGen(config, dataPath, IDs):
                        'batch_size': config['batch_size'],
                        'imagedim': (config['img_dim'][0],config['img_dim'][1]),          
                        'n_InputChannels': config['n_input_channels'],
-                       'n_classes': config['n_classes'],
+                       'n_classes': config['n_output_channels'],
                        'shuffle': config['shuffle'],                       
-                       'augmentation': config['augmentation'],
-                       'biasCorrection': config['biasfield_correction']}    
+                       'augmentation': config['augmentation']}    
     return DataGenerator_AbdominalFatSeg(**params_trainGen)
     
-    
+
 def saveSplitInfo(trainIDs, valIDs, name, dst):
     '''
     save train and split info to csv
@@ -243,6 +244,10 @@ def CreateTrainValListsForTrainig(pathToExtractedTrainingData):
     
     
 def k_fold_training(config):    
+    
+    # copy config
+    copyfile(config['config_path'],
+             os.path.join(config['dst'], os.path.basename(config['config_path'])))
     
     trainedModels_dir = os.path.join(config['dst'], 'models')
     os.mkdir(trainedModels_dir)

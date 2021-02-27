@@ -86,8 +86,7 @@ class dilatedConvBlock(keras.layers.Layer):
         return tf.concat([conv1, conv2, conv3], axis=3)
 
 
-'============================  Unet Manager  ============================'
-   
+'============================  Unet Manager  ============================'   
 class Unet_Designer():
    
     def __init__(self):        
@@ -101,6 +100,7 @@ class Unet_Designer():
                 singleChannelInput = True
             else:
                 singleChannelInput = False
+                
             return self.get_VGG16_Unet_upSampling_extramerge_final(img_dim=config['img_dim'], 
                                                              output_channels= config['n_output_channels'], 
                                                              drop_out=float(config['dropout']), 
@@ -108,14 +108,20 @@ class Unet_Designer():
                                                              interpolation=config['interpolation'], 
                                                              utilize_pretrained_weights=config['utilize_pretrained_weights'], 
                                                              singleChannelInput= singleChannelInput)
-        
+        if config['model_type'] == 'Unet_VGG16_raw':
+            return self.get_VGG16_Unet(img_dim=config['img_dim'], 
+                                       output_channels= config['n_output_channels'], 
+                                       drop_out=float(config['dropout']), 
+                                       batch_Norm=config['batch_normalization'],    
+                                       interpolation=config['interpolation']) 
         
         if config['model_type'] == 'Unet_VGG16_upSampling_extramerge':
             return self.get_VGG16_Unet_upSampling_extramerge(config['img_dim'], 
-                                                             output_channels= config['n_classes'], 
-                                                             drop_out=float(config['dropout']), 
-                                                             batch_Norm=config['batch_normalization'], 
-                                                             interpolation=config['interpolation'])
+                                                              output_channels= config['n_output_channels'], 
+                                                              drop_out=float(config['dropout']), 
+                                                              batch_Norm=config['batch_normalization'], 
+                                                              interpolation=config['interpolation'])
+       
         if config['model_type'] == 'Unet_base':
             config['img_dim'].append(config['n_input_channels']), 
             input_shape = (config['img_dim'][0], config['img_dim'][1], 
@@ -231,7 +237,6 @@ class Unet_Designer():
 
     # ----- vgg 16 encoder ------
     def vgg16_encoder_block(self, layer_in, n_filters=64, kernel_size=3, batch_Norm=True, drop_out=0.0):
-        
         # --- BLOCK 1 
         block1_conv2 = self.double_conv2D(n_filters, kernel_size, layer_in, batch_norm=batch_Norm, dropout=drop_out)
         pool_1 = MaxPooling2D(pool_size=(2, 2))(block1_conv2)
@@ -378,7 +383,6 @@ class Unet_Designer():
 
         model = Model(input=inputs, output=out, name="unet_vgg16")
         return model 
-  
 
 
     def get_VGG16_Unet_upSampling_extramerge_final(self, img_dim=(320, 320), output_channels=4,
@@ -429,7 +433,7 @@ class Unet_Designer():
                         if layer.name != 'block5_conv3':
                             x = MaxPooling2D(pool_size=(2, 2))(x)
         else:
-            n_filters = 64
+            # n_filters = 64
             x, skip_connections = self.vgg16_encoder_block(x, batch_Norm=batch_Norm)
             
         # ----------------- Mid conv ------------------------------------------
@@ -450,21 +454,19 @@ class Unet_Designer():
         conca_out = concatenate([x, inputs], axis=self.axis)
         conv_out = Conv2D(output_channels, (1, 1))(conca_out)
         out = Activation('softmax')(conv_out)
-        
         model = Model(input=inputs, output=out , name="unet_vgg16")
-        model.summary()
         return model
 
 
     
 # ===================== Unet with VGG16 encoder ===============================    
     
-    def get_VGG16_Unet(self, img_rows=320, img_cols=320, input_channels=1, output_channels=4, kernel_size = 5, drop_out=0.0, batch_Norm=True, interpolation='bilinear'):
+    def get_VGG16_Unet(self, img_dim=(320,320), input_channels=3, output_channels=4, kernel_size = 3, drop_out=0.0, batch_Norm=True, interpolation='bilinear'):
         '''
         plain VGG16 architecture without loading weights 
         '''        
         n_filters = 64
-        inputs = Input((img_rows, img_cols, 3))
+        inputs = Input((img_dim[0], img_dim[1], 3))
         
 #        ----- encoding path ------
         block1_conv2 = self.double_conv2D(n_filters, 3, inputs, batch_norm=batch_Norm, dropout=drop_out)
@@ -594,13 +596,44 @@ def createWeightacceptableUnet(modelPath):
     model.summary()    
     return model
     
+# '''
+# Total params: 53,839,056
+# Trainable params: 53,818,064
+# Non-trainable params: 20,992
+# __________________________________________________________________________________________________
+# number of layers are :103
 
-from keras.utils import plot_model
 
-def main():
-    um = Unet_Designer()    
-    model = um.get_VGG16_Unet_upSampling_extramerge_final(singleChannelInput=True, utilize_pretrained_weights=True)
-    plot_model(model , to_file='vgg16_pretrained.png')    
+# Total params: 53,839,056
+# Trainable params: 53,818,064
+# Non-trainable params: 20,992
+# __________________________________________________________________________________________________
+# number of layers are :103
+
+
+# Total params: 53,839,090
+# Trainable params: 53,818,092
+# Non-trainable params: 20,998
+# __________________________________________________________________________________________________
+# number of layers are :106
+
+# '''
+# # Total params: 53,822,160
+# # Trainable params: 53,809,616
+# # Non-trainable params: 12,544
+# # Total params: 53,839,056
+# # Trainable params: 53,818,064
+# # Non-trainable params: 20,992
+
+
+# from keras.utils import plot_model
+
+# def main():
+#     um = Unet_Designer()    
+#     model = um.get_VGG16_Unet_upSampling_extramerge_final((512,512), utilize_pretrained_weights=True)
+#     model.summary()
+#     print('number of layers are :' + str(len(model.layers)))
+# #     # plot_model(model , to_file='vgg16_pretrained.png')    
     
-if __name__ == "__main__":
-    main()     
+# if __name__ == "__main__":
+#     main()     

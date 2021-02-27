@@ -10,6 +10,7 @@ from evaluation import Evaluater
 import argparse
 import yaml
 
+
 def main():
     print('starting program ...')
     parser = argparse.ArgumentParser(prog='MedSeg')
@@ -17,10 +18,11 @@ def main():
     args = parser.parse_args()
     with open(args.config_path) as file:
         config = yaml.load(file, Loader=yaml.FullLoader)
+    config['config_path'] = args.config_path
     
     print('='*40)
     print('Starting Training...')
-    # k_fold_training(config)        
+    k_fold_training(config)        
     print('Training completed...')
     print('='*40)
     print('Starting Evaluation...')

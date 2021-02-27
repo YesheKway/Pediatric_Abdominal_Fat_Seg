@@ -345,6 +345,9 @@ class Evaluater():
             self.evaluateModel(path_toModelFile, csv_path_children, config['children_data_path'], loss=config['loss_function'], saveOverallResults=abspath, childrenData = True)    
 
         
+
+
+
    def evaluateModel(self, modelPath, csv_path_evaluationIDs, pathToData, loss='dice_coef_multilabel', saveOverallResults='', childrenData = False):
         """'''
         Args:

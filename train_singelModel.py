@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sun Feb 14 13:45:21 2021
-
 @author: ymk
 """
 from Utils import init_GPU_Session, get_ID_lists, dice_coef_multilabel
@@ -74,7 +73,7 @@ def startTraining(config):
     # define and compile model
     UD = Unet_Designer()
     model = UD.get_model(config)
-    model.summary()
+    # model.summary()
     model.compile(optimizer=Adam(lr=config['learning_rate']), loss=get_loss(config['loss_function']),  metrics=['accuracy'])   
     print("model is compiled")
     # define CallBacks 

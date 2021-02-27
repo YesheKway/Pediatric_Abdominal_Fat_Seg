@@ -7,6 +7,7 @@ Created on Fri Dec 18 11:07:53 2020
 """
 import SimpleITK as sitk
 import numpy as np
+from cv2 import resize
 
 
 class ImageProcessing():
@@ -105,3 +106,30 @@ class ImageProcessing():
               else:
                   new_tensor[:,:,i] = self.paddimage_new(img, new_shape, 0)        
           return new_tensor
+      
+    def resize_image(self, img, newsize):
+        return resize(img, newsize)
+    
+    def resize_labels(self, label_tensor, newsize):
+        new = np.empty(newsize, newsize, label_tensor.shape[-1])
+        for i in range(label_tensor.shape[-1]):
+            new[:, :, i] = self.resize_image(label_tensor[:, :, 1], newsize) 
+        return new
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          
