@@ -18,8 +18,8 @@ import tensorflow as tf
 from keras.engine.topology import Layer
 import keras
 
-'============================  Customized layers  ============================'
 
+'============================  Customized layers  ============================'
 class downSampleLayer(Layer):
     """
     Bilinear Downsamloing layer
@@ -93,8 +93,8 @@ class Unet_Designer():
         self.axis = -1 
 
 # ============================= Getter ========================================
-
     def get_model(self, config):
+        
         if config['model_type'] == 'Unet_VGG16':
             if config["n_input_channels"] == 1:
                 singleChannelInput = True
@@ -110,25 +110,63 @@ class Unet_Designer():
                                                              singleChannelInput= singleChannelInput)
         if config['model_type'] == 'Unet_VGG16_raw':
             return self.get_VGG16_Unet(img_dim=config['img_dim'], 
+                                       input_channels = config['n_input_channels'], 
                                        output_channels= config['n_output_channels'], 
                                        drop_out=float(config['dropout']), 
                                        batch_Norm=config['batch_normalization'],    
                                        interpolation=config['interpolation']) 
         
-        if config['model_type'] == 'Unet_VGG16_upSampling_extramerge':
-            return self.get_VGG16_Unet_upSampling_extramerge(config['img_dim'], 
+        if config['model_type'] == 'old_model':
+            return self.old_model(config['img_dim'], output_channels= config['n_output_channels'], 
+                                                     input_channels = config['n_input_channels'], 
+                                                     drop_out=float(config['dropout']), 
+                                                     batch_Norm=config['batch_normalization'], 
+                                                     interpolation=config['interpolation'])
+        
+        if config['model_type'] == 'get_VGG16_Unet_upSampling_extramerge_fullBottleN':
+            return self.get_VGG16_Unet_upSampling_extramerge_fullBottleN(config['img_dim'], 
                                                               output_channels= config['n_output_channels'], 
                                                               drop_out=float(config['dropout']), 
                                                               batch_Norm=config['batch_normalization'], 
                                                               interpolation=config['interpolation'])
-       
         if config['model_type'] == 'Unet_base':
             config['img_dim'].append(config['n_input_channels']), 
             input_shape = (config['img_dim'][0], config['img_dim'][1], 
                            config['img_dim'][2])
             return self.get_Unet(input_shape, output_channels= config['n_classes'],
                                  drop_out=float(config['dropout']),
-                                 batch_Norm=config['batch_normalization'])        
+                                 batch_Norm=config['batch_normalization'])   
+        
+        if config['model_type'] == 'bottle':
+            if config["n_input_channels"] == 1:
+                singleChannelInput = True
+            else:
+                singleChannelInput = False
+                
+            return self.get_VGG16_bottle(img_dim=config['img_dim'], 
+                                                             output_channels= config['n_output_channels'], 
+                                                             drop_out=float(config['dropout']), 
+                                                             batch_Norm=config['batch_normalization'], 
+                                                             interpolation=config['interpolation'], 
+                                                             utilize_pretrained_weights=config['utilize_pretrained_weights'], 
+                                                             singleChannelInput= singleChannelInput)    
+
+        if config['model_type'] == 'bottle_s':
+            if config["n_input_channels"] == 1:
+                singleChannelInput = True
+            else:
+                singleChannelInput = False
+                
+            return self.get_VGG16_bottle_s(img_dim=config['img_dim'], 
+                                                             output_channels= config['n_output_channels'], 
+                                                             drop_out=float(config['dropout']), 
+                                                             batch_Norm=config['batch_normalization'], 
+                                                             interpolation=config['interpolation'], 
+                                                             utilize_pretrained_weights=config['utilize_pretrained_weights'], 
+                                                             singleChannelInput= singleChannelInput)  
+        
+        
+        
         
 
 # ========================= Customized layers =================================
@@ -319,7 +357,289 @@ class Unet_Designer():
         
 # ------------------------- FINAL model used in the paper ---------------------
 
-    def get_VGG16_Unet_upSampling_extramerge(self, img_dim=(320, 320), output_channels=4,
+    def get_VGG16_Unet_upSampling_extramerge_final(self, img_dim=(320, 320), output_channels=4,
+                                             drop_out=0.0, batch_Norm=True, interpolation='bilinear', singleChannelInput=False, 
+                                             utilize_pretrained_weights=True, bottleNeck=True):
+        
+        # ---------------- Load Pretrained VGG 16 model ----------------------
+        # (pretrained image net)
+        vgg16 = VGG16(input_shape=(img_dim[0], img_dim[1], 3), include_top=False) 
+        vgg16.trainable = True 
+        # get layers 
+        vgg16_layers = vgg16.layers
+        
+        # ----------------- Define Input --------------------------------------
+        # Define input: when singleChannelInput is set, 3 filter will be applied 
+        # to the grayscale input image to comply with the following vgg16 layers dimentions
+        # if singleChannelInput is False, the input image will be copied to map a 3 channel 
+        # RGB image to comply with the vgg16 layers 
+        if singleChannelInput == True:
+            inputs = Input((img_dim[0], img_dim[1], 1))
+            # apply 3 filter to tripple input to suite vgg16 iinput dimention
+            tripple_input = self.bn_conv2D(3, 3, inputs)
+            x = tripple_input    
+        else: 
+            inputs = vgg16_layers[0].input
+            x = vgg16_layers[0].input           
+
+        #------------------ Build Encoder--------------------------------------
+        # extract only convolutional layers
+        vgg16_Conv_layers = [l for l in vgg16_layers if('conv' in l.name)] 
+        
+        # 1. build encoder with pretrained convolutional layers 
+        if utilize_pretrained_weights == True:
+            skip_connections = {}
+            skc_count = 1
+            for layer in vgg16_Conv_layers:
+                if 'block1' in layer.name or 'block2' in layer.name:
+                    x = self.conv_block(layer, x, batch_Norm)
+                    if 'conv2' in layer.name:
+                        skip_connections[skc_count] = x
+                        skc_count += 1 
+                        x = MaxPooling2D(pool_size=(2, 2))(x)
+                else:
+                    x = self.conv_block(layer, x, batch_Norm)
+                    if 'conv2' in layer.name:
+                        skip_connections[skc_count] = x
+                        skc_count += 1
+                        if layer.name != 'block5_conv3':
+                            x = MaxPooling2D(pool_size=(2, 2))(x)
+        else:
+            # n_filters = 64
+            x, skip_connections = self.vgg16_encoder_block(x, batch_Norm=batch_Norm)
+            
+        # ----------------- Mid conv ------------------------------------------
+        x = self.double_conv2D(1024, 3, x, batch_Norm)
+        if bottleNeck:
+            x = self.bn_conv2D(1024, 3, x)
+        
+        # ----------------- Build Decoder --------------------------------------
+        for i in range(len(skip_connections) , 0, -1):
+            # print(skip_connections[i].name)
+            n_filters = int(skip_connections[i].shape[-1])
+            # upsampling
+            up = UpSampling2D(size = (2,2), interpolation=interpolation)(x)
+            conca = concatenate([up, skip_connections[i]], axis=-1)             
+            x = self.double_conv2D(n_filters, 3, conca, batch_Norm)
+            if i > 2:
+                x = self.bn_conv2D(n_filters, 3, x)
+
+        # final convolution and output activation 
+        in_c = Reshape((512,512,1))(Lambda(lambda x : x[:,:,:,0])(inputs))
+        conca_out = concatenate([x, in_c], axis=self.axis)
+        conv_out = Conv2D(output_channels, (1, 1))(conca_out)
+        out = Activation('softmax')(conv_out)
+        model = Model(input=inputs, output=out , name="unet_vgg16")
+        return model
+
+    
+# ===================== Unet with VGG16 encoder structre from scratch =========
+    
+    def get_VGG16_Unet(self, img_dim=(320,320), input_channels=3, output_channels=4, kernel_size = 3, drop_out=0.0, batch_Norm=True, interpolation='bilinear'):
+        '''
+        plain VGG16 architecture without loading weights 
+        '''        
+        n_filters = 64
+        inputs = Input((img_dim[0], img_dim[1], input_channels))
+        
+#        ----- encoding path ------
+        block1_conv2 = self.double_conv2D(n_filters, 3, inputs, batch_norm=batch_Norm, dropout=drop_out)
+        pool_1 = MaxPooling2D(pool_size=(2, 2))(block1_conv2)
+
+        block2_conv2 = self.double_conv2D(n_filters*2, 3, pool_1, batch_norm=batch_Norm, dropout=drop_out)
+        pool_2 = MaxPooling2D(pool_size=(2, 2))(block2_conv2)
+        
+        block3_conv2 = self.double_conv2D(n_filters*4, 3, pool_2, batch_norm=batch_Norm, dropout=drop_out)
+        block3_conv3 = self.bn_conv2D(n_filters*4, 3, block3_conv2)           
+        pool_3 = MaxPooling2D(pool_size=(2, 2))(block3_conv3)
+     
+        block4_conv2 = self.double_conv2D(n_filters*8, 3, pool_3, batch_norm=batch_Norm, dropout=drop_out)
+        block4_conv3 = self.bn_conv2D(n_filters*8, 3, block4_conv2)           
+        pool_4 = MaxPooling2D(pool_size=(2, 2))(block4_conv3)
+        
+        block5_conv2 = self.double_conv2D(n_filters*8, 3, pool_4, batch_norm=batch_Norm, dropout=drop_out)
+        block5_conv3 = self.bn_conv2D(n_filters*8, 3, block5_conv2)           
+        pool_5 = MaxPooling2D(pool_size=(2, 2))(block5_conv3)
+                
+         #--mid convolutions--    
+        convMid_1 = self.double_conv2D(n_filters*16, 3, pool_5, batch_norm=batch_Norm, dropout=drop_out)    
+
+#       ------- decoder path ----------
+        upconv_1 = UpSampling2D((2,2), interpolation=interpolation)(convMid_1)
+        conca_1 = concatenate([upconv_1, block5_conv3], axis=self.axis)
+        conv_1 = self.double_conv2D(n_filters*8, kernel_size, conca_1, batch_norm=batch_Norm, dropout=drop_out)
+        conv_1 = self.bn_conv2D(n_filters*8, 3, conv_1)
+                
+#        upconv_2 = self.SubpixelConv2D((conv_1.get_shape()[1], conv_1.get_shape()[2], conv_1.get_shape()[3]), scale=2, name='subpix2')(conv_1)
+        upconv_2 = UpSampling2D((2,2), interpolation=interpolation)(conv_1)
+        conca_2 = concatenate([upconv_2, block4_conv3], axis=self.axis)
+        conv_2 = self.double_conv2D(n_filters*8, kernel_size, conca_2, batch_norm=batch_Norm, dropout=drop_out)
+        conv_2 = self.bn_conv2D(n_filters*8, 3, conv_2)
+        
+#        upconv_3 = self.SubpixelConv2D((conv_2.get_shape()[1], conv_2.get_shape()[2], conv_2.get_shape()[3]), scale=2, name='subpix3')(conv_2)
+        upconv_3 = UpSampling2D((2,2), interpolation=interpolation)(conv_2)
+        conca_3 = concatenate([upconv_3, block3_conv3], axis=self.axis)
+        conv_3 = self.double_conv2D(n_filters*4, kernel_size, conca_3, batch_norm=batch_Norm, dropout=drop_out) 
+        conv_3 = self.bn_conv2D(n_filters*4, 3, conv_3)
+        
+#        upconv_4 = self.SubpixelConv2D((conv_3.get_shape()[1], conv_3.get_shape()[2], conv_3.get_shape()[3]), scale=2, name='subpix4')(conv_3)
+        upconv_4 = UpSampling2D((2,2), interpolation=interpolation)(conv_3)
+        conca_4 = concatenate([upconv_4, block2_conv2], axis=self.axis)
+        conv_4 = self.double_conv2D(n_filters*2, kernel_size, conca_4, batch_norm=batch_Norm, dropout=drop_out)        
+    
+#        upconv_5 = self.SubpixelConv2D((conv_4.get_shape()[1], conv_4.get_shape()[2], conv_4.get_shape()[3]), scale=2, name='subpi5')(conv_4)
+        upconv_5 = UpSampling2D((2,2), interpolation=interpolation)(conv_4)
+        conca_5 = concatenate([upconv_5, block1_conv2], axis=self.axis)
+        conv_5 = self.double_conv2D(n_filters, kernel_size, conca_5, batch_norm=batch_Norm, dropout=drop_out)    
+            
+        conca_6 = concatenate([conv_5, inputs], axis=self.axis)
+        out = Conv2D(output_channels, (1, 1))(conca_6)
+        out = Activation('softmax')(out)
+
+        model = Model(input=inputs, output=out, name="unet_vgg16")
+        return model 
+
+    
+#================ VGG Network to train with weights maps ======================
+    def get_VGG16_Unet_weight(self, img_rows=320, img_cols=320, input_channels=1, output_channels=4, drop_out=0.0, batch_Norm=True, USE_BIAS = False):
+            
+            n_filters = 64
+            inputs = Input((img_rows, img_cols, 3))
+    
+            #get VGG16
+            vgg16 = VGG16(input_tensor=inputs, include_top=False)
+            for l in vgg16.layers:
+                l.trainable = True
+                
+            out_vgg16 = vgg16(inputs)
+            #get vgg layer outputs    
+            block1_conv2 = vgg16.get_layer("block1_conv2").output    
+            block2_conv2 = vgg16.get_layer("block2_conv2").output
+            block3_conv3 = vgg16.get_layer("block3_conv3").output      
+            block4_conv3 = vgg16.get_layer("block4_conv3").output
+            block5_conv3 = vgg16.get_layer("block5_conv3").output 
+            out_vgg16 = vgg16.get_layer("block5_pool").output
+            
+            #--mid convolutions--
+            convMid_1 = self.double_conv2D(n_filters*16, 3, out_vgg16 , batch_norm=batch_Norm, dropout=drop_out)    
+
+            #------- up path ---------- 
+            upconv_1 = Convolution2DTranspose(n_filters*8, (2, 2), strides=(2, 2), use_bias= USE_BIAS)(convMid_1)
+            conca_1 = concatenate([upconv_1, block5_conv3], axis=self.axis)
+            conv_1 = self.double_conv2D(n_filters*8, 3, conca_1, batch_norm=batch_Norm, dropout=drop_out)
+            conv_1 = self.bn_conv2D(n_filters*8, 3, conv_1)
+                    
+            upconv_2 = Convolution2DTranspose(n_filters*8, (2, 2), strides=(2, 2), use_bias= USE_BIAS)(conv_1)
+            conca_2 = concatenate([upconv_2, block4_conv3], axis=self.axis)
+            conv_2 = self.double_conv2D(n_filters*8, 3, conca_2, batch_norm=batch_Norm, dropout=drop_out)
+            conv_2 = self.bn_conv2D(n_filters*8, 3, conv_2)
+            
+            upconv_3 = Convolution2DTranspose(n_filters*4, (2, 2), strides=(2, 2), use_bias= USE_BIAS)(conv_2)
+            conca_3 = concatenate([upconv_3, block3_conv3], axis=self.axis)
+            conv_3 = self.double_conv2D(n_filters*4, 3, conca_3, batch_norm=batch_Norm, dropout=drop_out) 
+            conv_3 = self.bn_conv2D(n_filters*4, 3, conv_3)
+            
+            upconv_4 = Convolution2DTranspose(n_filters*2, (2, 2), strides=(2, 2), use_bias= USE_BIAS)(conv_3)
+            conca_4 = concatenate([upconv_4, block2_conv2], axis=self.axis)
+            conv_4 = self.double_conv2D(n_filters*2, 3, conca_4, batch_norm=batch_Norm, dropout=drop_out)        
+        
+            upconv_5 = Convolution2DTranspose(n_filters, (2, 2), strides=(2, 2), use_bias= USE_BIAS)(conv_4)
+            conca_5 = concatenate([upconv_5, block1_conv2], axis=self.axis)
+            conv_5 = self.double_conv2D(n_filters, 3, conca_5, batch_norm=batch_Norm, dropout=drop_out)    
+            
+            out = Conv2D(output_channels, (1, 1))(conv_5)
+            softmax_output = Activation('softmax')(out)
+            log_activation = softmaxLayer()(softmax_output)
+            
+            # Add a new input to serve as the source for the weight maps
+            weight_map_ip = Input(shape=(img_rows, img_cols, 4))
+            weighted_softmax = multiply([log_activation, weight_map_ip])
+            model = Model(inputs=[inputs, weight_map_ip], outputs=[weighted_softmax], name='NewUnet')      
+            return model 
+
+
+
+
+
+
+# =============================================================================
+#                               EXTRA MODELS
+# =============================================================================
+
+    # def get_VGG16_Unet_upSampling_extramerge_fullBottleN(self, img_dim=(320, 320), output_channels=4,
+    #                                          drop_out=0.0, batch_Norm=True, interpolation='bilinear', singleChannelInput=False, 
+    #                                          utilize_pretrained_weights=True):
+        
+    #     # ---------------- Load Pretrained VGG 16 model ----------------------
+    #     # (pretrained image net)
+    #     vgg16 = VGG16(input_shape=(img_dim[0], img_dim[1], 3), include_top=False) 
+    #     vgg16.trainable = True 
+    #     # get layers 
+    #     vgg16_layers = vgg16.layers
+        
+    #     # ----------------- Define Input --------------------------------------
+    #     # Define input: when singleChannelInput is set, 3 filter will be applied 
+    #     # to the grayscale input image to comply with the following vgg16 layers dimentions
+    #     # if singleChannelInput is False, the input image will be copied to map a 3 channel 
+    #     # RGB image to comply with the vgg16 layers 
+    #     if singleChannelInput == True:
+    #         inputs = Input((img_dim[0], img_dim[1], 1))
+    #         # apply 3 filter to tripple input to suite vgg16 iinput dimention
+    #         tripple_input = self.bn_conv2D(3, 3, inputs)
+    #         x = tripple_input    
+    #     else: 
+    #         inputs = vgg16_layers[0].input
+    #         x = vgg16_layers[0].input           
+
+    #     #------------------ Build Encoder--------------------------------------
+    #     # extract only convolutional layers
+    #     vgg16_Conv_layers = [l for l in vgg16_layers if('conv' in l.name)] 
+        
+    #     # 1. build encoder with pretrained convolutional layers 
+    #     if utilize_pretrained_weights == True:
+    #         skip_connections = {}
+    #         skc_count = 1
+    #         for layer in vgg16_Conv_layers:
+    #             if 'block1' in layer.name or 'block2' in layer.name:
+    #                 x = self.conv_block(layer, x, batch_Norm)
+    #                 if 'conv2' in layer.name:
+    #                     skip_connections[skc_count] = x
+    #                     skc_count += 1 
+    #                     x = MaxPooling2D(pool_size=(2, 2))(x)
+    #             else:
+    #                 x = self.conv_block(layer, x, batch_Norm)
+    #                 if 'conv2' in layer.name:
+    #                     skip_connections[skc_count] = x
+    #                     skc_count += 1
+    #                     if layer.name != 'block5_conv3':
+    #                         x = MaxPooling2D(pool_size=(2, 2))(x)
+    #     else:
+    #         # n_filters = 64
+    #         x, skip_connections = self.vgg16_encoder_block(x, batch_Norm=batch_Norm)
+            
+    #     # ----------------- Mid conv ------------------------------------------
+    #     x = self.double_conv2D(1024, 3, x, batch_Norm)
+    #     x = self.bn_conv2D(1024, 3, x)
+    #     # ----------------- Build Decoder --------------------------------------
+    #     for i in range(len(skip_connections) , 0, -1):
+    #         # print(skip_connections[i].name)
+    #         n_filters = int(skip_connections[i].shape[-1])
+    #         # upsampling
+    #         up = UpSampling2D(size = (2,2), interpolation=interpolation)(x)
+    #         conca = concatenate([up, skip_connections[i]], axis=-1)             
+    #         x = self.double_conv2D(n_filters, 3, conca, batch_Norm)
+    #         if i > 2:
+    #             x = self.bn_conv2D(n_filters, 3, x)
+
+    #     # final convolution and output activation 
+    #     conca_out = concatenate([x, inputs], axis=self.axis)
+    #     conv_out = Conv2D(output_channels, (1, 1))(conca_out)
+    #     out = Activation('softmax')(conv_out)
+    #     model = Model(input=inputs, output=out , name="unet_vgg16")
+    #     return model        
+        
+
+    def get_VGG16_Unet_upSampling_extramerge_fullBottleN(self, img_dim=(512, 512), output_channels=4,
                                              drop_out=0.0, batch_Norm=True, USE_BIAS = False, interpolation='bilinear'):
         n_filters = 64
         inputs = Input((img_dim[0], img_dim[1], 3))
@@ -336,14 +656,10 @@ class Unet_Designer():
         block4_conv3 = vgg16.get_layer("block4_conv3").output
         block5_conv3 = vgg16.get_layer("block5_conv3").output 
         out_vgg16 = vgg16.get_layer("block5_pool").output
-  
         #--mid convolutions--
         convMid_1 = self.double_conv2D(n_filters*16, 3, out_vgg16 , batch_norm=batch_Norm, dropout=drop_out)    
-
-        print(convMid_1.get_shape()[1])
-        print(type(convMid_1.get_shape()))
-        
-#        ------- up path ---------- 
+        convMid_1 = self.bn_conv2D(n_filters*16, 3, convMid_1)        
+#       ------- up path ---------- 
 #        upconv_1 = Convolution2DTranspose(n_filters*8, (2, 2), strides=(2, 2), use_bias= USE_BIAS)(convMid_1)
 #        upconv_1 = self.SubpixelConv2D((convMid_1.get_shape()[1], convMid_1.get_shape()[2], convMid_1.get_shape()[3]), scale=2, name='subpix1')(convMid_1)  
         upconv_1 = UpSampling2D((2,2), interpolation=interpolation)(convMid_1)
@@ -385,7 +701,82 @@ class Unet_Designer():
         return model 
 
 
-    def get_VGG16_Unet_upSampling_extramerge_final(self, img_dim=(320, 320), output_channels=4,
+    def get_VGG16_bottle(self, img_dim=(320, 320), output_channels=4,
+                                             drop_out=0.0, batch_Norm=True, interpolation='bilinear', singleChannelInput=False, 
+                                             utilize_pretrained_weights=True):
+        
+        # ---------------- Load Pretrained VGG 16 model ----------------------
+        # (pretrained image net)
+        vgg16 = VGG16(input_shape=(img_dim[0], img_dim[1], 3), include_top=False) 
+        vgg16.trainable = True 
+        # get layers 
+        vgg16_layers = vgg16.layers
+        
+        # ----------------- Define Input --------------------------------------
+        # Define input: when singleChannelInput is set, 3 filter will be applied 
+        # to the grayscale input image to comply with the following vgg16 layers dimentions
+        # if singleChannelInput is False, the input image will be copied to map a 3 channel 
+        # RGB image to comply with the vgg16 layers 
+        if singleChannelInput == True:
+            inputs = Input((img_dim[0], img_dim[1], 1))
+            # apply 3 filter to tripple input to suite vgg16 iinput dimention
+            tripple_input = self.bn_conv2D(3, 3, inputs)
+            x = tripple_input    
+        else: 
+            inputs = vgg16_layers[0].input
+            x = vgg16_layers[0].input           
+
+        #------------------ Build Encoder--------------------------------------
+        # extract only convolutional layers
+        vgg16_Conv_layers = [l for l in vgg16_layers if('conv' in l.name)] 
+        
+        # 1. build encoder with pretrained convolutional layers 
+        if utilize_pretrained_weights == True:
+            skip_connections = {}
+            skc_count = 1
+            for layer in vgg16_Conv_layers:
+                if 'block1' in layer.name or 'block2' in layer.name:
+                    x = self.conv_block(layer, x, batch_Norm)
+                    if 'conv2' in layer.name:
+                        skip_connections[skc_count] = x
+                        skc_count += 1 
+                        x = MaxPooling2D(pool_size=(2, 2))(x)
+                else:
+                    x = self.conv_block(layer, x, batch_Norm)
+                    if 'conv2' in layer.name:
+                        skip_connections[skc_count] = x
+                        skc_count += 1
+                        if layer.name != 'block5_conv3':
+                            x = MaxPooling2D(pool_size=(2, 2))(x)
+        else:
+            # n_filters = 64
+            x, skip_connections = self.vgg16_encoder_block(x, batch_Norm=batch_Norm)
+            
+        # ----------------- Mid conv ------------------------------------------
+        x = self.double_conv2D(1024, 3, x, batch_Norm)
+        x = self.bn_conv2D(1024, 3, x)
+
+        # ----------------- Build Decoder --------------------------------------
+        for i in range(len(skip_connections) , 0, -1):
+            # print(skip_connections[i].name)
+            n_filters = int(skip_connections[i].shape[-1])
+            # upsampling
+            up = UpSampling2D(size = (2,2), interpolation=interpolation)(x)
+            conca = concatenate([up, skip_connections[i]], axis=-1)             
+            x = self.double_conv2D(n_filters, 3, conca, batch_Norm)
+            if i > 2:
+                x = self.bn_conv2D(n_filters, 3, x)
+
+        # final convolution and output activation 
+        conca_out = concatenate([x, inputs], axis=self.axis)
+        conv_out = Conv2D(output_channels, (1, 1))(conca_out)
+        out = Activation('softmax')(conv_out)
+        model = Model(input=inputs, output=out , name="unet_vgg16")
+        return model
+
+
+
+    def get_VGG16_bottle_s(self, img_dim=(320, 320), output_channels=4,
                                              drop_out=0.0, batch_Norm=True, interpolation='bilinear', singleChannelInput=False, 
                                              utilize_pretrained_weights=True):
         
@@ -458,130 +849,72 @@ class Unet_Designer():
         return model
 
 
-    
-# ===================== Unet with VGG16 encoder ===============================    
-    
-    def get_VGG16_Unet(self, img_dim=(320,320), input_channels=3, output_channels=4, kernel_size = 3, drop_out=0.0, batch_Norm=True, interpolation='bilinear'):
-        '''
-        plain VGG16 architecture without loading weights 
-        '''        
+    def old_model(self, input_dim = (320, 320), input_channels=1, output_channels=4, drop_out=0.0, batch_Norm=True, USE_BIAS = False, interpolation='bilinear', fullbottle=False):
         n_filters = 64
-        inputs = Input((img_dim[0], img_dim[1], 3))
-        
-#        ----- encoding path ------
-        block1_conv2 = self.double_conv2D(n_filters, 3, inputs, batch_norm=batch_Norm, dropout=drop_out)
-        pool_1 = MaxPooling2D(pool_size=(2, 2))(block1_conv2)
-
-        block2_conv2 = self.double_conv2D(n_filters*2, 3, pool_1, batch_norm=batch_Norm, dropout=drop_out)
-        pool_2 = MaxPooling2D(pool_size=(2, 2))(block2_conv2)
-        
-        block3_conv2 = self.double_conv2D(n_filters*4, 3, pool_2, batch_norm=batch_Norm, dropout=drop_out)
-        block3_conv3 = self.bn_conv2D(n_filters*4, 3, block3_conv2)           
-        pool_3 = MaxPooling2D(pool_size=(2, 2))(block3_conv3)
-     
-        block4_conv2 = self.double_conv2D(n_filters*8, 3, pool_3, batch_norm=batch_Norm, dropout=drop_out)
-        block4_conv3 = self.bn_conv2D(n_filters*8, 3, block4_conv2)           
-        pool_4 = MaxPooling2D(pool_size=(2, 2))(block4_conv3)
-        
-        block5_conv2 = self.double_conv2D(n_filters*8, 3, pool_4, batch_norm=batch_Norm, dropout=drop_out)
-        block5_conv3 = self.bn_conv2D(n_filters*8, 3, block5_conv2)           
-        pool_5 = MaxPooling2D(pool_size=(2, 2))(block5_conv3)
-                
-         #--mid convolutions--    
-        convMid_1 = self.double_conv2D(n_filters*16, 3, pool_5, batch_norm=batch_Norm, dropout=drop_out)    
-
-#       ------- decoder path ----------
+        inputs = Input((input_dim[0], input_dim[1], 3))
+        #get VGG16
+        vgg16 = VGG16(input_tensor=inputs, include_top=False)
+#        vgg16 = VGG16( input_shape=inputShape, include_top=False) 
+        for l in vgg16.layers:
+            l.trainable = True
+#        vgg16.summary()
+        out_vgg16 = vgg16(inputs)
+    
+        #get vgg layer outputs    
+        block1_conv2 = vgg16.get_layer("block1_conv2").output    
+        block2_conv2 = vgg16.get_layer("block2_conv2").output
+        block3_conv3 = vgg16.get_layer("block3_conv3").output      
+        block4_conv3 = vgg16.get_layer("block4_conv3").output
+        block5_conv3 = vgg16.get_layer("block5_conv3").output 
+        out_vgg16 = vgg16.get_layer("block5_pool").output
+  
+        #--mid convolutions--
+        convMid_1 = self.double_conv2D(n_filters*16, 3, out_vgg16 , batch_norm=batch_Norm, dropout=drop_out)    
+        if fullbottle:
+            convMid_1 = self.bn_conv2D(n_filters*16, 3, convMid_1)
+#        ------- up path ---------- 
+#        upconv_1 = Convolution2DTranspose(n_filters*8, (2, 2), strides=(2, 2), use_bias= USE_BIAS)(convMid_1)
+#        upconv_1 = self.SubpixelConv2D((convMid_1.get_shape()[1], convMid_1.get_shape()[2], convMid_1.get_shape()[3]), scale=2, name='subpix1')(convMid_1)  
         upconv_1 = UpSampling2D((2,2), interpolation=interpolation)(convMid_1)
         conca_1 = concatenate([upconv_1, block5_conv3], axis=self.axis)
-        conv_1 = self.double_conv2D(n_filters*8, kernel_size, conca_1, batch_norm=batch_Norm, dropout=drop_out)
+        conv_1 = self.double_conv2D(n_filters*8, 3, conca_1, batch_norm=batch_Norm, dropout=drop_out)
         conv_1 = self.bn_conv2D(n_filters*8, 3, conv_1)
                 
+#        upconv_2 = Convolution2DTranspose(n_filters*8, (2, 2), strides=(2, 2), use_bias= USE_BIAS)(conv_1)        
 #        upconv_2 = self.SubpixelConv2D((conv_1.get_shape()[1], conv_1.get_shape()[2], conv_1.get_shape()[3]), scale=2, name='subpix2')(conv_1)
         upconv_2 = UpSampling2D((2,2), interpolation=interpolation)(conv_1)
         conca_2 = concatenate([upconv_2, block4_conv3], axis=self.axis)
-        conv_2 = self.double_conv2D(n_filters*8, kernel_size, conca_2, batch_norm=batch_Norm, dropout=drop_out)
+        conv_2 = self.double_conv2D(n_filters*8, 3, conca_2, batch_norm=batch_Norm, dropout=drop_out)
         conv_2 = self.bn_conv2D(n_filters*8, 3, conv_2)
         
+#        upconv_3 = Convolution2DTranspose(n_filters*4, (2, 2), strides=(2, 2), use_bias= USE_BIAS)(conv_2)
 #        upconv_3 = self.SubpixelConv2D((conv_2.get_shape()[1], conv_2.get_shape()[2], conv_2.get_shape()[3]), scale=2, name='subpix3')(conv_2)
         upconv_3 = UpSampling2D((2,2), interpolation=interpolation)(conv_2)
         conca_3 = concatenate([upconv_3, block3_conv3], axis=self.axis)
-        conv_3 = self.double_conv2D(n_filters*4, kernel_size, conca_3, batch_norm=batch_Norm, dropout=drop_out) 
+        conv_3 = self.double_conv2D(n_filters*4, 3, conca_3, batch_norm=batch_Norm, dropout=drop_out) 
         conv_3 = self.bn_conv2D(n_filters*4, 3, conv_3)
         
+#        upconv_4 = Convolution2DTranspose(n_filters*2, (2, 2), strides=(2, 2), use_bias= USE_BIAS)(conv_3)
 #        upconv_4 = self.SubpixelConv2D((conv_3.get_shape()[1], conv_3.get_shape()[2], conv_3.get_shape()[3]), scale=2, name='subpix4')(conv_3)
         upconv_4 = UpSampling2D((2,2), interpolation=interpolation)(conv_3)
         conca_4 = concatenate([upconv_4, block2_conv2], axis=self.axis)
-        conv_4 = self.double_conv2D(n_filters*2, kernel_size, conca_4, batch_norm=batch_Norm, dropout=drop_out)        
+        conv_4 = self.double_conv2D(n_filters*2, 3, conca_4, batch_norm=batch_Norm, dropout=drop_out)        
     
+#        upconv_5 = Convolution2DTranspose(n_filters, (2, 2), strides=(2, 2), use_bias= USE_BIAS)(conv_4)
 #        upconv_5 = self.SubpixelConv2D((conv_4.get_shape()[1], conv_4.get_shape()[2], conv_4.get_shape()[3]), scale=2, name='subpi5')(conv_4)
         upconv_5 = UpSampling2D((2,2), interpolation=interpolation)(conv_4)
         conca_5 = concatenate([upconv_5, block1_conv2], axis=self.axis)
-        conv_5 = self.double_conv2D(n_filters, kernel_size, conca_5, batch_norm=batch_Norm, dropout=drop_out)    
-            
-        conca_6 = concatenate([conv_5, inputs], axis=self.axis)
+        conv_5 = self.double_conv2D(n_filters, 3, conca_5, batch_norm=batch_Norm, dropout=drop_out)    
+        
+        in_c = Reshape((512,512,1))(Lambda(lambda x : x[:,:,:,0])(inputs))
+        print(in_c.get_shape())
+        print(inputs.get_shape())    
+        
+        conca_6 = concatenate([conv_5, in_c], axis=self.axis)
         out = Conv2D(output_channels, (1, 1))(conca_6)
         out = Activation('softmax')(out)
-
         model = Model(input=inputs, output=out, name="unet_vgg16")
         return model 
-
-    
-#================ VGG Network to train with weights maps ======================== 
-    def get_VGG16_Unet_weight(self, img_rows=320, img_cols=320, input_channels=1, output_channels=4, drop_out=0.0, batch_Norm=True, USE_BIAS = False):
-            
-            n_filters = 64
-            inputs = Input((img_rows, img_cols, 3))
-    
-            #get VGG16
-            vgg16 = VGG16(input_tensor=inputs, include_top=False)
-            for l in vgg16.layers:
-                l.trainable = True
-                
-            out_vgg16 = vgg16(inputs)
-            #get vgg layer outputs    
-            block1_conv2 = vgg16.get_layer("block1_conv2").output    
-            block2_conv2 = vgg16.get_layer("block2_conv2").output
-            block3_conv3 = vgg16.get_layer("block3_conv3").output      
-            block4_conv3 = vgg16.get_layer("block4_conv3").output
-            block5_conv3 = vgg16.get_layer("block5_conv3").output 
-            out_vgg16 = vgg16.get_layer("block5_pool").output
-            
-            #--mid convolutions--
-            convMid_1 = self.double_conv2D(n_filters*16, 3, out_vgg16 , batch_norm=batch_Norm, dropout=drop_out)    
-
-            #------- up path ---------- 
-            upconv_1 = Convolution2DTranspose(n_filters*8, (2, 2), strides=(2, 2), use_bias= USE_BIAS)(convMid_1)
-            conca_1 = concatenate([upconv_1, block5_conv3], axis=self.axis)
-            conv_1 = self.double_conv2D(n_filters*8, 3, conca_1, batch_norm=batch_Norm, dropout=drop_out)
-            conv_1 = self.bn_conv2D(n_filters*8, 3, conv_1)
-                    
-            upconv_2 = Convolution2DTranspose(n_filters*8, (2, 2), strides=(2, 2), use_bias= USE_BIAS)(conv_1)
-            conca_2 = concatenate([upconv_2, block4_conv3], axis=self.axis)
-            conv_2 = self.double_conv2D(n_filters*8, 3, conca_2, batch_norm=batch_Norm, dropout=drop_out)
-            conv_2 = self.bn_conv2D(n_filters*8, 3, conv_2)
-            
-            upconv_3 = Convolution2DTranspose(n_filters*4, (2, 2), strides=(2, 2), use_bias= USE_BIAS)(conv_2)
-            conca_3 = concatenate([upconv_3, block3_conv3], axis=self.axis)
-            conv_3 = self.double_conv2D(n_filters*4, 3, conca_3, batch_norm=batch_Norm, dropout=drop_out) 
-            conv_3 = self.bn_conv2D(n_filters*4, 3, conv_3)
-            
-            upconv_4 = Convolution2DTranspose(n_filters*2, (2, 2), strides=(2, 2), use_bias= USE_BIAS)(conv_3)
-            conca_4 = concatenate([upconv_4, block2_conv2], axis=self.axis)
-            conv_4 = self.double_conv2D(n_filters*2, 3, conca_4, batch_norm=batch_Norm, dropout=drop_out)        
-        
-            upconv_5 = Convolution2DTranspose(n_filters, (2, 2), strides=(2, 2), use_bias= USE_BIAS)(conv_4)
-            conca_5 = concatenate([upconv_5, block1_conv2], axis=self.axis)
-            conv_5 = self.double_conv2D(n_filters, 3, conca_5, batch_norm=batch_Norm, dropout=drop_out)    
-            
-            out = Conv2D(output_channels, (1, 1))(conv_5)
-            softmax_output = Activation('softmax')(out)
-            log_activation = softmaxLayer()(softmax_output)
-            
-            # Add a new input to serve as the source for the weight maps
-            weight_map_ip = Input(shape=(img_rows, img_cols, 4))
-            weighted_softmax = multiply([log_activation, weight_map_ip])
-            model = Model(inputs=[inputs, weight_map_ip], outputs=[weighted_softmax], name='NewUnet')      
-            return model 
 
 
 def createWeightacceptableUnet(modelPath):
@@ -596,44 +929,14 @@ def createWeightacceptableUnet(modelPath):
     model.summary()    
     return model
     
-# '''
-# Total params: 53,839,056
-# Trainable params: 53,818,064
-# Non-trainable params: 20,992
-# __________________________________________________________________________________________________
-# number of layers are :103
 
-
-# Total params: 53,839,056
-# Trainable params: 53,818,064
-# Non-trainable params: 20,992
-# __________________________________________________________________________________________________
-# number of layers are :103
-
-
-# Total params: 53,839,090
-# Trainable params: 53,818,092
-# Non-trainable params: 20,998
-# __________________________________________________________________________________________________
-# number of layers are :106
-
-# '''
-# # Total params: 53,822,160
-# # Trainable params: 53,809,616
-# # Non-trainable params: 12,544
-# # Total params: 53,839,056
-# # Trainable params: 53,818,064
-# # Non-trainable params: 20,992
-
-
-# from keras.utils import plot_model
-
-# def main():
-#     um = Unet_Designer()    
-#     model = um.get_VGG16_Unet_upSampling_extramerge_final((512,512), utilize_pretrained_weights=True)
-#     model.summary()
-#     print('number of layers are :' + str(len(model.layers)))
-# #     # plot_model(model , to_file='vgg16_pretrained.png')    
+def main():
+    um = Unet_Designer()    
+    model = um.get_VGG16_Unet_upSampling_extramerge_final((512,512), utilize_pretrained_weights=True, bottleNeck= False)
+    # model = um.old_model((512,512))
+    model.summary()
+    print('number of layers are :' + str(len(model.layers)))
+#     # plot_model(model , to_file='vgg16_pretrained.png')    
     
-# if __name__ == "__main__":
-#     main()     
+if __name__ == "__main__":
+    main()     

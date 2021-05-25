@@ -13,21 +13,17 @@ from keras.models import load_model
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
-import argparse   
-import yaml
 import os 
-
 
 class Evaluater():
 
    def __init__(self, SEGTAST='VAT_SSAT_DSAT', modelPath=''):
+       
        self.SEGTAST = SEGTAST
        self.metrice_names = ["dice", "fp", "fn", "tp", "tn"]
        self.imageProcessor = ImageProcessing()
        self.models_mean_performance_neonates = pd.DataFrame()
        self.models_mean_performance_children = pd.DataFrame()
-       self.models_median_performance_neonates = pd.DataFrame()
-       self.models_median_performance_children = pd.DataFrame()
        # define labelnames and set number of classes
        if self.SEGTAST == "VAT_SSAT_DSAT":
            self.labelnames = ("bg", "ssat", "dsat", "vat")
@@ -142,6 +138,7 @@ class Evaluater():
        intersection = np.logical_and(groundTruth, prediction)
        return 2. * intersection.sum() / im_sum 
 
+        
      
    def calc_BatchDice(self, gtruthBatch, predBatch):  
        """this method calculates the total dice for a batch 
@@ -234,11 +231,8 @@ class Evaluater():
             self.evaluateModel(path_toModelFile, csv_path_neonates, config['infant_data_path'], loss=config['loss_function'], dst=abspath)
             # evaluate model on childrne data 
             self.evaluateModel(path_toModelFile, csv_path_children, config['children_data_path'], loss=config['loss_function'], dst=abspath, childrenData = True)    
-        self.models_mean_performance_neonates.to_excel(os.path.join(pathToModels, 'All_Model_mean_neonates.xlsx'))
-        self.models_mean_performance_children.to_excel(os.path.join(pathToModels, 'All_Model_mean_children.xlsx'))
-        self.models_median_performance_neonates.to_excel(os.path.join(pathToModels, 'All_Model_median_neonates.xlsx'))
-        self.models_median_performance_children.to_excel(os.path.join(pathToModels, 'All_Model_median_children.xlsx'))
-
+        self.models_mean_performance_neonates.to_excel(os.path.join(pathToModels, 'All_Model_mean_neonates_2.xlsx'))
+        self.models_mean_performance_children.to_excel(os.path.join(pathToModels, 'All_Model_mean_children_2.xlsx'))
 
    def evaluateModel(self, modelPath, csv_path_evaluationIDs, pathToData, loss='dice_coef_multilabel', dst='', childrenData = False):
         """'''
@@ -254,14 +248,18 @@ class Evaluater():
            :saveOverallResults: if a path is given, a exel with mean and SD info 
            for all classes is save as SegResults.xlsx
         """      
+        
         init_GPU_Session()    
         # load model     
         self.load_Model(modelPath, loss)
+        
         # define path to raw an gt data 
         pathToRawData = os.path.join(pathToData, 'Train_RawData')
         pathToLabelData = os.path.join(pathToData, 'Train_LabelData')       
+        
         # get ids for evaluation 
         all_subjects = readCSVToList(csv_path_evaluationIDs) 
+        
         # dataframe to store computed metrice values for all subjects 
         model_performance = pd.DataFrame()                             
         
@@ -293,27 +291,37 @@ class Evaluater():
         self.SaveResults(model_performance, dst, childrenData=childrenData)    
         # self.printAndSaveFinalResults(dice_list, fp_list, fn_list, saveSegResults=saveOverallResults, childrenData=childrenData)   
 
+
    def SaveResults(self, model_performance, dst, childrenData=False):
+       # means = model_performance.mean()
+       # means.name = 'mean'
+        # stds = model_performance.std()
+       # stds.name = 'std'    
+       # comb = pd.concat([means, stds], axis=1)
        means = model_performance.mean()
        means.name = 'mean'
        stds = model_performance.std()
        stds.name = 'std'    
-       medians = model_performance.median()
-       medians.name = 'median'    
-       quantile = model_performance.quantile([.1, .25, .5, .75], axis = 0).transpose()
-       comb = pd.concat([means, stds, medians, quantile], axis=1)
+       median = model_performance.median()
+       median.name = 'median'    
+       quantile = model_performance.quantile([.1, .25, .5, .75], axis = 0)
+       comb = pd.concat([means, stds, median, quantile], axis=1)
 
+       # extra_stats = model_performance.describe()
+       
        if childrenData == True:
            Excel_name_ending = '_Children.xlsx'
-           self.models_mean_performance_children = self.models_mean_performance_children.append(means, ignore_index=True)
-           self.models_median_performance_children = self.models_mean_performance_children.append(medians, ignore_index=True)
+           self.models_mean_performance_children = self.models_mean_performance_children.append(means, ignore_index=True) 
        else:
            Excel_name_ending = '_Neonates.xlsx'                                
            self.models_mean_performance_neonates = self.models_mean_performance_neonates.append(means, ignore_index=True) 
-           self.models_median_performance_neonates = self.models_mean_performance_neonates.append(medians, ignore_index=True) 
-       model_performance.to_excel(os.path.join(dst, 'All_subj_volume_performance' + Excel_name_ending))      
-       comb.to_excel(os.path.join(dst, 'Mean_performance' + Excel_name_ending))      
+       
+       # extra_stats.to_excel(os.path.join(dst, 'Extra_stats' + Excel_name_ending))      
+       model_performance.to_excel(os.path.join(dst, 'All_subj_volume_performance_2' + Excel_name_ending))      
+       comb.to_excel(os.path.join(dst, 'Mean_performance_TEST' + Excel_name_ending))      
     
+
+
 
 # def EvaluateTrainedModel():
     # pathToSubjects = '/home/mrsmig/sda6/Yeshe/Data/Infant/TotalTrainingSubj'    
@@ -336,25 +344,29 @@ class Evaluater():
     # ev = Evaluater()
     # ev.EvaluateModels(config)
 
-# def local():
-#     print('starting program ...')
-#     config_path = '//media/kwaygo/ymk_HDD1/Experiments/AAT_SEG/GustoData/tmpTestCombined/AllExtractedVolumes/evaluation_test/default_config_512_forTest.yaml'
-#     with open(config_path) as file:
-#         config = yaml.load(file, Loader=yaml.FullLoader)
-#     ev = Evaluater()        
-#     ev.EvaluateModels(config)    
-
-
-def main():
-    # local()
+def local():
     print('starting program ...')
-    parser = argparse.ArgumentParser(prog='AbdoSeg')
-    parser.add_argument('-config', '--config_path', type=str, default='./config/default_config.yaml', help='Configuration file defining training and evaluation parameters')
-    args = parser.parse_args()
-    with open(args.config_path) as file:
+    config_path = '/media/kwaygo/ymk_HDD1/Documents/Manuscripts/AAT_seg/Paper-Models/Presented10Folds/10_fold_TrainingResults_512_Weights/Second_Evaluation/10_fold_512_Weights/default_config_512.yaml'
+    with open(config_path) as file:
         config = yaml.load(file, Loader=yaml.FullLoader)
     ev = Evaluater()        
-    ev.EvaluateModels(config)
+    ev.EvaluateModels(config)    
+
+import yaml
+import argparse    
+
+def main():
+    local()
+    
+    # print('starting program ...')
+    # parser = argparse.ArgumentParser(prog='AbdoSeg')
+    # parser.add_argument('-config', '--config_path', type=str, default='./config/default_config.yaml', help='Configuration file defining training and evaluation parameters')
+    # args = parser.parse_args()
+    # with open(args.config_path) as file:
+    #     config = yaml.load(file, Loader=yaml.FullLoader)
+    # ev = Evaluater()        
+    # ev.EvaluateModels(config)
+    
     
 if __name__ == "__main__":
     main()

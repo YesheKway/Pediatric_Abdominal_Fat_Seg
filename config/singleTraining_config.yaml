@@ -1,7 +1,7 @@
 # Training Configuration
 #------------------------------- PATHS -------------------------------------------------------------------------
 config_path: /config/singleTraining_config.yaml
-#data_path: //home/kwaygo/Documents/Abdominal_Adipose_Segmentation/test_train_set/
+#data_path: //home/kwaygo/Documents/Abdominal_Adipose_Segmentation/test_data_set/
 #dst: /home/kwaygo/Documents/Abdominal_Adipose_Segmentation/test_train_set/tmpdst
 data_path: /app/Data/Combined/ChildrenAndNeonates
 dst: /app/Code/AAT_SEG/dst # path at which training results will be saved to

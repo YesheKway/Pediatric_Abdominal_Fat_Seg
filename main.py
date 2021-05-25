@@ -10,7 +10,6 @@ from evaluation import Evaluater
 import argparse
 import yaml
 
-
 def main():
     print('starting program ...')
     parser = argparse.ArgumentParser(prog='MedSeg')

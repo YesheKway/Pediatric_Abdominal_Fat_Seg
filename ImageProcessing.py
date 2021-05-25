@@ -33,16 +33,6 @@ class ImageProcessing():
         vat = (pred_amax == 3).astype(int) 
         return np.moveaxis(np.stack((bg, ssat, dsat, vat)), 0, -1)           
 
-    
-    def biasFielCorrectionBatch(self, img_batch):
-         """
-         Args:
-             img_batch: shape = (batchsite, row, col)
-         """
-         corrected = np.zeros_like(img_batch)
-         for i in range(len(img_batch)):
-             corrected[i] = self.biasFieldCorrection(img_batch[i])
-         return np.array(corrected)    
      
     def biasFieldCorrection(self, img):
          """
@@ -55,15 +45,6 @@ class ImageProcessing():
          corrector = sitk.N4BiasFieldCorrectionImageFilter();
          img_corrected = corrector.Execute(img,maskImage)                
          return sitk.GetArrayFromImage(img_corrected)
-    
-    
-    def pad_with(self, vector, pad_width, iaxis, kwargs):
-        '''
-        Help function to define padd calue 
-        '''
-        pad_value = kwargs.get('padder', 10)
-        vector[:pad_width[0]] = pad_value
-        vector[-pad_width[1]:] = pad_value
     
     
     def paddimage_new(self, img, new_shape, paddValue=0):
@@ -88,8 +69,26 @@ class ImageProcessing():
         delta_h = new_shape[0] - input_shape[0]
         top, bottom = delta_h//2, delta_h-(delta_h//2)
         left, right = delta_w//2, delta_w-(delta_w//2)
-        padded_tensor = np.pad(img, ((top,bottom),(left,right)), self.pad_with, padder=paddValue)
+        padded_tensor = np.pad(img, ((top,bottom),(left,right)), 'constant', constant_values=(paddValue))
         return padded_tensor  
+    
+    
+    def paddBatch(self, batch, new_shape, paddValue=0):
+        '''
+        this finction padds the images in a batch to desired size 
+        Args:
+            batch: batch of shape (batchh_size, w, h)
+            new_shape: (new_w, new_h)
+            paddValue: pixel value used for padding
+        Return:
+            resized_batch:  (batchh_size, desired_size, desired_size)
+        '''
+        b, w, h = batch.shape
+        resized_batch = np.zeros((b, new_shape[0], new_shape[1]))
+        for i in range(b):
+            resized_batch[i]  = self.paddimage_new(batch[i], new_shape, paddValue)
+        return resized_batch   
+    
     
     def paddlabelTensor(self, lableTensor, new_shape):
           '''
@@ -106,24 +105,42 @@ class ImageProcessing():
               else:
                   new_tensor[:,:,i] = self.paddimage_new(img, new_shape, 0)        
           return new_tensor
-      
+
+
+    def paddLabelBatch(self, lable_batch, new_shape):
+        '''
+        padd all masks in a batch of label masks 
+        Args:
+            lable_batch: must be shape (bachtsize, w, h, classes)
+            new_shape: integer for desired size 
+        '''
+        b, w, h, c = lable_batch.shape
+        new_batch = np.zeros((b, new_shape[0], new_shape[1], c))
+        for i in range(b):
+            new_batch[i] = self.paddlabelTensor(lable_batch[i], new_shape)                                    
+        return new_batch
+
+        
     def resize_image(self, img, newsize):
         return resize(img, newsize)
+    
     
     def resize_labels(self, label_tensor, newsize):
         new = np.empty(newsize, newsize, label_tensor.shape[-1])
         for i in range(label_tensor.shape[-1]):
             new[:, :, i] = self.resize_image(label_tensor[:, :, 1], newsize) 
         return new
-        
 
 
-
-
-
-
-
-
+    def biasFielCorrectionBatch(self, img_batch):
+         """
+         Args:
+             img_batch: shape = (batchsite, row, col)
+         """
+         corrected = np.zeros_like(img_batch)
+         for i in range(len(img_batch)):
+             corrected[i] = self.biasFieldCorrection(img_batch[i])
+         return np.array(corrected) 
 
 
 
